@@ -100,33 +100,36 @@ public class HTTPClient {
 
             // Create socket and send request
             Socket socket = new Socket(hostname, portNumber);
-            OutputStream out = socket.getOutputStream();
-            out.write(StandardCharsets.UTF_8.encode(requestString).array());
+            DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+            out.writeBytes(requestString);
 
             // Send file contents if PUT request
             if ("PUT".equals(method)) {
                 Files.copy(filepath, out);
             }
 
-            // Read response as byte array
-            byte[] received = socket.getInputStream().readAllBytes();
-
-            // Convert header into string
+            // Get header and contents from response
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             StringBuilder responseHeaderStringBuilder = new StringBuilder();
-            boolean finishedReadingHeader = false;
-            int byteIndex = 0;
-            while (!finishedReadingHeader && byteIndex < received.length) {
-                char character = (char) received[byteIndex];
-                responseHeaderStringBuilder.append(character);
-                int length = responseHeaderStringBuilder.length();
-                // End of header marked by CR/LF twice in sequence
-                if (length >= 4) {
-                    String lastFourChars = responseHeaderStringBuilder.substring(length - 4);
-                    finishedReadingHeader = lastFourChars.equals(CRLF + CRLF);
+            StringBuilder responseContentStringBuilder = new StringBuilder();
+            boolean readingHeader = true;
+            int character;
+            while ((character = in.read()) != -1) {
+                if (readingHeader) {
+                    responseHeaderStringBuilder.append((char) character);
+                    int length = responseHeaderStringBuilder.length();
+                    if (length > 4) {
+                        String lastFour = responseHeaderStringBuilder.substring(length - 4);
+                        if (lastFour.equals(CRLF + CRLF)) {
+                            readingHeader = false;
+                        }
+                    }
+                } else {
+                    responseContentStringBuilder.append((char) character);
                 }
-                byteIndex++;
             }
             String responseHeader = responseHeaderStringBuilder.toString();
+            String content = responseContentStringBuilder.toString();
 
             // Get and print response code from HTTP header
             int firstSpaceIndex = responseHeader.indexOf(' ');
@@ -139,9 +142,7 @@ public class HTTPClient {
             printHeader(responseHeader, "Server");
             if ("GET".equals(method) && responseCode >= 200 && responseCode < 300) {
                 printHeader(responseHeader, "Last-Modified");
-                int dataLength = received.length - byteIndex;
-                System.out.println(dataLength);
-                // printHeader(responseHeader, "Content-Length");
+                System.out.println(content.length());
             } else if ("GET".equals(method) && responseCode >= 300 && responseCode < 400) {
                 printHeader(responseHeader, "Location");
             }
@@ -149,19 +150,11 @@ public class HTTPClient {
             // Print entire HTTP response header
             System.out.print(CRLF + responseHeader);
 
-            if ("GET".equals(method)) {
-                // Copy data to new array and save as file, if any data received
-                int dataLength = received.length - byteIndex;
-                if (dataLength > 0) {
-
-                    // Copy data only (not header) into new byte array
-                    byte[] data = new byte[dataLength];
-                    System.arraycopy(received, byteIndex, data, 0, dataLength);
-
+            if ("GET".equals(method) && content.length() > 0) {
                     // Get file name
                     String filename;
                     if (path.equals("/")) {
-                        filename = "newFile";
+                        filename = "index.html";
                     } else {
                         if (path.endsWith("/")) {
                             path = path.substring(0, path.length() - 1);
@@ -170,15 +163,14 @@ public class HTTPClient {
                         int nameIndex = pathElements.length - 1;
                         filename = pathElements[nameIndex].trim();
                         if (filename.equals("")) {
-                            filename = "newFile";
+                            filename = "index.html";
                         }
                     }
 
                     // Save to file
-                    OutputStream os = new FileOutputStream(filename);
-                    os.write(data);
-                    os.close();
-                }
+                    PrintWriter writer = new PrintWriter(filename, StandardCharsets.UTF_8);
+                    writer.write(content);
+                    writer.close();
             }
 
             socket.close();

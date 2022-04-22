@@ -46,25 +46,30 @@ public class HTTPServer {
     private static void acceptConnection(ServerSocket welcomeSocket) throws Exception {
         // Receive connection request
         Socket connectionSocket = welcomeSocket.accept();
-        byte[] received = connectionSocket.getInputStream().readAllBytes();
 
-        // Convert header into string
-        String CRLF = "\r\n"; // Carriage return + line feed
+        // Get header and contents from request
+        BufferedReader in = new BufferedReader(new InputStreamReader(connectionSocket.getInputStream()));
         StringBuilder requestHeaderStringBuilder = new StringBuilder();
-        boolean finishedReadingHeader = false;
-        int byteIndex = 0;
-        while (!finishedReadingHeader && byteIndex < received.length) {
-            char character = (char) received[byteIndex];
-            requestHeaderStringBuilder.append(character);
-            int length = requestHeaderStringBuilder.length();
-            // End of header marked by CR/LF twice in sequence
-            if (length >= 4) {
-                String lastFourChars = requestHeaderStringBuilder.substring(length - 4);
-                finishedReadingHeader = lastFourChars.equals(CRLF + CRLF);
+        StringBuilder requestContentStringBuilder = new StringBuilder();
+        String CRLF = "\r\n"; // Carriage return + line feed
+        boolean readingHeader = true;
+        int character;
+        while ((character = in.read()) != -1) {
+            if (readingHeader) {
+                requestHeaderStringBuilder.append((char) character);
+                int length = requestHeaderStringBuilder.length();
+                if (length > 4) {
+                    String lastFour = requestHeaderStringBuilder.substring(length - 4);
+                    if (lastFour.equals(CRLF + CRLF)) {
+                        readingHeader = false;
+                    }
+                }
+            } else {
+                requestContentStringBuilder.append((char) character);
             }
-            byteIndex++;
         }
         String requestHeader = requestHeaderStringBuilder.toString();
+        String content = requestContentStringBuilder.toString();
 
         // Parse request and print info about request
         int firstSpaceIndex = requestHeader.indexOf(" ");
@@ -77,7 +82,7 @@ public class HTTPServer {
         System.out.print(requestHeader);
 
         // Prepare and send response
-        OutputStream out = connectionSocket.getOutputStream();
+        DataOutputStream out = new DataOutputStream(connectionSocket.getOutputStream());
         if ("GET".equals(method)) {
             Path filepath = Paths.get(path);
             if (!Files.exists(filepath)) {
@@ -87,17 +92,29 @@ public class HTTPServer {
                 // Send 200 OK
                 sendResponse(out, "200 OK", filepath);
             }
-        } else if ("PUT".equals(method)) {
+        } else if ("PUT".equals(method) && content.length() > 0) {
             try {
-                // Copy data to new array and save as file, if any data received
-                int dataLength = received.length - byteIndex;
-                // Copy data only (not header) into new byte array
-                byte[] data = new byte[dataLength];
-                System.arraycopy(received, byteIndex, data, 0, dataLength);
+                // Get file name
+                String filename;
+                if (path.equals("/")) {
+                    filename = "index.html";
+                } else {
+                    if (path.endsWith("/")) {
+                        path = path.substring(0, path.length() - 1);
+                    }
+                    String[] pathElements = path.split("/");
+                    int nameIndex = pathElements.length - 1;
+                    filename = pathElements[nameIndex].trim();
+                    if (filename.equals("")) {
+                        filename = "index.html";
+                    }
+                }
+
                 // Save to file
-                OutputStream os = new FileOutputStream(path);
-                os.write(data);
-                os.close();
+                PrintWriter writer = new PrintWriter(filename, StandardCharsets.UTF_8);
+                writer.write(content);
+                writer.close();
+
                 // Send 200 OK File Created
                 sendResponse(out, "200 OK File Created", null);
             } catch (Exception e) {
@@ -110,7 +127,7 @@ public class HTTPServer {
 
     }
 
-    private static void sendResponse(OutputStream out, String status, Path filepath) throws Exception {
+    private static void sendResponse(DataOutputStream out, String status, Path filepath) throws Exception {
         // Construct and send HTTP response
         String CRLF = "\r\n"; // Carriage return + line feed
         String dateTimeString = DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now(ZoneOffset.UTC));
@@ -119,7 +136,7 @@ public class HTTPServer {
                 "Class-name: VCU-CMSC440-2022" + CRLF +
                 "User-name: Sean Youngstone" + CRLF +
                 CRLF;
-        out.write(StandardCharsets.UTF_8.encode(responseString).array());
+        out.writeBytes(responseString);
 
         // Send file if included
         if (filepath != null) {
