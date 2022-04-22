@@ -32,7 +32,10 @@ public class HTTPServer {
                 ServerSocket welcomeSocket = new ServerSocket(port);
 
                 // Accept connections on a loop
-                while (true) acceptConnection(welcomeSocket);
+                while (true) {
+                    Socket connectionSocket = welcomeSocket.accept();
+                    receiveRequest(connectionSocket);
+                }
 
             } else {
                 throw new Exception("Incorrect number of args");
@@ -43,29 +46,34 @@ public class HTTPServer {
         }
     }
 
-    private static void acceptConnection(ServerSocket welcomeSocket) throws Exception {
-        // Receive connection request
-        Socket connectionSocket = welcomeSocket.accept();
-
+    private static void receiveRequest(Socket socket) throws Exception {
         // Get header and contents from request
-        BufferedReader in = new BufferedReader(new InputStreamReader(connectionSocket.getInputStream()));
+        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         StringBuilder requestHeaderStringBuilder = new StringBuilder();
         StringBuilder requestContentStringBuilder = new StringBuilder();
         String CRLF = "\r\n"; // Carriage return + line feed
         boolean readingHeader = true;
-        int character;
-        while ((character = in.read()) != -1) {
+        int remainingBytes = 0;
+        while (readingHeader || remainingBytes > 0) {
+            int character = in.read();
             if (readingHeader) {
                 requestHeaderStringBuilder.append((char) character);
                 int length = requestHeaderStringBuilder.length();
                 if (length > 4) {
                     String lastFour = requestHeaderStringBuilder.substring(length - 4);
+                    // Check if we have reached the end of the header
                     if (lastFour.equals(CRLF + CRLF)) {
                         readingHeader = false;
+                        // Continue to read if there is data coming
+                        if (requestHeaderStringBuilder.substring(0,3).equals("PUT")) {
+                            String contentLength = getHeader(requestHeaderStringBuilder.toString(), "Content-Length");
+                            if (contentLength != null) remainingBytes = Integer.parseInt(contentLength);
+                        }
                     }
                 }
             } else {
                 requestContentStringBuilder.append((char) character);
+                remainingBytes--;
             }
         }
         String requestHeader = requestHeaderStringBuilder.toString();
@@ -76,42 +84,26 @@ public class HTTPServer {
         int secondSpaceIndex = requestHeader.indexOf(" ", firstSpaceIndex + 1);
         String method = requestHeader.substring(0, firstSpaceIndex);
         String path = requestHeader.substring(firstSpaceIndex + 1, secondSpaceIndex);
-        String clientIPAddress = connectionSocket.getInetAddress().toString();
-        int clientPort = connectionSocket.getPort();
+        String clientIPAddress = socket.getInetAddress().toString();
+        int clientPort = socket.getPort();
         System.out.println(clientIPAddress + ":" + clientPort + ":" + method + CRLF);
         System.out.print(requestHeader);
 
         // Prepare and send response
-        DataOutputStream out = new DataOutputStream(connectionSocket.getOutputStream());
+        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+        String filepath = getFilePath(path);
         if ("GET".equals(method)) {
-            Path filepath = Paths.get(path);
-            if (!Files.exists(filepath)) {
+            if (!Files.exists(Paths.get(filepath))) {
                 // Send 404 Not Found
                 sendResponse(out, "404 Not Found", null);
             } else {
                 // Send 200 OK
-                sendResponse(out, "200 OK", filepath);
+                sendResponse(out, "200 OK", Paths.get(filepath));
             }
         } else if ("PUT".equals(method) && content.length() > 0) {
             try {
-                // Get file name
-                String filename;
-                if (path.equals("/")) {
-                    filename = "index.html";
-                } else {
-                    if (path.endsWith("/")) {
-                        path = path.substring(0, path.length() - 1);
-                    }
-                    String[] pathElements = path.split("/");
-                    int nameIndex = pathElements.length - 1;
-                    filename = pathElements[nameIndex].trim();
-                    if (filename.equals("")) {
-                        filename = "index.html";
-                    }
-                }
-
                 // Save to file
-                PrintWriter writer = new PrintWriter(filename, StandardCharsets.UTF_8);
+                PrintWriter writer = new PrintWriter(filepath, StandardCharsets.UTF_8);
                 writer.write(content);
                 writer.close();
 
@@ -123,8 +115,22 @@ public class HTTPServer {
             }
         }
 
-        connectionSocket.close();
+        socket.close();
 
+    }
+
+    private static String getFilePath(String path) {
+        if (path.equals("/")) {
+            return "index.html";
+        } else {
+            if (path.endsWith("/")) {
+                path = path.substring(0, path.length() - 1);
+            }
+            if (path.startsWith("/")) {
+                path = path.substring(1);
+            }
+            return path;
+        }
     }
 
     private static void sendResponse(DataOutputStream out, String status, Path filepath) throws Exception {
@@ -142,5 +148,17 @@ public class HTTPServer {
         if (filepath != null) {
             Files.copy(filepath, out);
         }
+    }
+
+    // Find content of particular header value in the HTTP header and print it out
+    private static String getHeader(String responseHeader, String headerName) {
+        String CRLF = "\r\n";
+        int headerIndex = responseHeader.indexOf(headerName);
+        if (headerIndex >= 0) {
+            int contentIndex = responseHeader.indexOf(" ", headerIndex) + 1;
+            int endIndex = responseHeader.indexOf(CRLF, headerIndex);
+            return responseHeader.substring(contentIndex, endIndex);
+        }
+        return null;
     }
 }

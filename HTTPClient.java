@@ -88,9 +88,11 @@ public class HTTPClient {
             // Prepare HTTP request string
             String CRLF = "\r\n"; // Carriage return + line feed
             String dateTimeString = DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now(ZoneOffset.UTC));
+            long fileSize = (filepath != null) ? Files.size(filepath) : 0;
             String requestString = method + " " + path + " HTTP/1.0" + CRLF +
-                    "Host: " + hostname + CRLF +
+                    "Host: " + hostname + ((port != null) ? ":" + port : "") + CRLF +
                     "Time: " + dateTimeString + CRLF +
+                    "Content-Length: " + fileSize + CRLF +
                     "Class-name: VCU-CMSC440-2022" + CRLF +
                     "User-name: Sean Youngstone" + CRLF +
                     CRLF;
