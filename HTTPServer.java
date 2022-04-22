@@ -85,14 +85,17 @@ public class HTTPServer {
         String method = requestHeader.substring(0, firstSpaceIndex);
         String path = requestHeader.substring(firstSpaceIndex + 1, secondSpaceIndex);
         String clientIPAddress = socket.getInetAddress().toString();
+        if (clientIPAddress.startsWith("/")) {
+            clientIPAddress = clientIPAddress.substring(1);
+        }
         int clientPort = socket.getPort();
         System.out.println(clientIPAddress + ":" + clientPort + ":" + method + CRLF);
         System.out.print(requestHeader);
 
         // Prepare and send response
         DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-        String filepath = getFilePath(path);
         if ("GET".equals(method)) {
+            String filepath = getFilePath(path);
             if (!Files.exists(Paths.get(filepath))) {
                 // Send 404 Not Found
                 sendResponse(out, "404 Not Found", null);
@@ -103,7 +106,7 @@ public class HTTPServer {
         } else if ("PUT".equals(method) && content.length() > 0) {
             try {
                 // Save to file
-                PrintWriter writer = new PrintWriter(filepath, StandardCharsets.UTF_8);
+                PrintWriter writer = new PrintWriter("index.html", StandardCharsets.UTF_8);
                 writer.write(content);
                 writer.close();
 
