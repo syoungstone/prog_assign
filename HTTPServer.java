@@ -59,9 +59,9 @@ public class HTTPServer {
             if (readingHeader) {
                 requestHeaderStringBuilder.append((char) character);
                 int length = requestHeaderStringBuilder.length();
+                // Check if we have reached the end of the header
                 if (length > 4) {
                     String lastFour = requestHeaderStringBuilder.substring(length - 4);
-                    // Check if we have reached the end of the header
                     if (lastFour.equals(CRLF + CRLF)) {
                         readingHeader = false;
                         // Continue to read if there is data coming
@@ -85,6 +85,7 @@ public class HTTPServer {
         String method = requestHeader.substring(0, firstSpaceIndex);
         String path = requestHeader.substring(firstSpaceIndex + 1, secondSpaceIndex);
         String clientIPAddress = socket.getInetAddress().toString();
+        // Removing unnecessary "/" from IP address
         if (clientIPAddress.startsWith("/")) {
             clientIPAddress = clientIPAddress.substring(1);
         }
@@ -95,7 +96,7 @@ public class HTTPServer {
         // Prepare and send response
         DataOutputStream out = new DataOutputStream(socket.getOutputStream());
         if ("GET".equals(method)) {
-            String filepath = getFilePath(path);
+            String filepath = getFilePathOrIndex(path);
             if (!Files.exists(Paths.get(filepath))) {
                 // Send 404 Not Found
                 sendResponse(out, "404 Not Found", null);
@@ -106,7 +107,8 @@ public class HTTPServer {
         } else if ("PUT".equals(method) && content.length() > 0) {
             try {
                 // Save to file
-                PrintWriter writer = new PrintWriter("index.html", StandardCharsets.UTF_8);
+                String filename = getFilePath(path);
+                PrintWriter writer = new PrintWriter(filename, StandardCharsets.UTF_8);
                 writer.write(content);
                 writer.close();
 
@@ -122,18 +124,25 @@ public class HTTPServer {
 
     }
 
-    private static String getFilePath(String path) {
+    // For GET method, returns index.html if path is "/"
+    // Trims "/" from start and end of path otherwise
+    private static String getFilePathOrIndex(String path) {
         if (path.equals("/")) {
             return "index.html";
         } else {
-            if (path.endsWith("/")) {
-                path = path.substring(0, path.length() - 1);
-            }
-            if (path.startsWith("/")) {
-                path = path.substring(1);
-            }
-            return path;
+            return getFilePath(path);
         }
+    }
+
+    // For PUT method, trims "/" from start and end of path
+    private static String getFilePath(String path) {
+        if (path.endsWith("/")) {
+            path = path.substring(0, path.length() - 1);
+        }
+        if (path.startsWith("/")) {
+            path = path.substring(1);
+        }
+        return path;
     }
 
     private static void sendResponse(DataOutputStream out, String status, Path filepath) throws Exception {
@@ -142,6 +151,11 @@ public class HTTPServer {
         String dateTimeString = DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now(ZoneOffset.UTC));
         String responseString = "HTTP/1.0 " + status + CRLF +
                 "Time: " + dateTimeString + CRLF +
+                // Send "Content-Length" header if sending data
+                ((filepath != null)
+                        ? "Content-Length: " + Files.size(filepath) + CRLF
+                        : ""
+                ) +
                 "Class-name: VCU-CMSC440-2022" + CRLF +
                 "User-name: Sean Youngstone" + CRLF +
                 CRLF;
