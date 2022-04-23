@@ -11,17 +11,23 @@ java HTTPServer 10001
 Sample GET request commands using HTTPClient.java:
 java HTTPClient http://info.cern.ch
 java HTTPClient http://172.18.233.74:10373
-java HTTPClient http://172.18.233.74:10373/directory
-java HTTPClient http://172.18.233.74:10373/filename.html
+java HTTPClient http://172.18.233.74:10373/index.html
+java HTTPClient http://172.18.233.74:10373/mydir/index.html
 
 Sample PUT request commands using HTTPClient.java:
 java HTTPClient PUT http://172.18.233.74:10373 index.html
 java HTTPClient PUT http://172.18.233.74:10373/mydir index.html
 java HTTPClient PUT http://172.18.233.74:10373/mydir localdir/index.html
-(These last two will only work if the referenced client and server directories exist)
 
+(Note that the directories mydir and localdir do not currently exist in the zip file)
 
 IMPORTANT NOTES:
+
+* I was successful at testing these programs when they were both on my local
+  machine, and when they were both on egr-v-cmsc440-1. I was not successful at testing
+  them with the client on one machine and the server on a different machine. I'm not
+  sure if this was due to a programming bug, lack of permissions, or not using the
+  correct IP addresses for the remote machines.
 
 * HTTPServer.java and HTTPClient.java are only designed to receive content which is made
   up of characters. They cannot handle images or other non-textual data.
